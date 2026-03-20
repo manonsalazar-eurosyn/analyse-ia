@@ -1,7 +1,9 @@
 import express from "express";
 import fetch from "node-fetch";
+import cors from "cors";
 
 const app = express();
+app.use(cors()); // permet à LimeSurvey d'appeler ton serveur
 app.use(express.json());
 
 app.post("/analyseIA", async (req, res) => {
@@ -22,7 +24,7 @@ Format de réponse :
 Mot-clé : Oui/Non - Détaillé/Pas détaillé
 
 Texte :
-"${texte}"
+${texte}
 `;
 
         const response = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -42,7 +44,7 @@ Texte :
 
         const reponseIA = data.choices[0].message.content;
 
-        res.json({ reponseIA });
+        res.json({ reponseIA }); // le front devra lire data.reponseIA
 
     } catch (error) {
         console.error(error);
@@ -50,6 +52,7 @@ Texte :
     }
 });
 
-app.listen(3000, () => {
-    console.log("Serveur lancé sur le port 3000");
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`Serveur lancé sur le port ${PORT}`);
 });
