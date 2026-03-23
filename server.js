@@ -27,11 +27,14 @@ Texte :
 ${texte}
 `;
 
+        // Clé factice pour tester
+        const OPENAI_API_KEY = "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";
+
         const response = await fetch("https://api.openai.com/v1/chat/completions", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
-                "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`
+                "Authorization": `Bearer ${OPENAI_API_KEY}`
             },
             body: JSON.stringify({
                 model: "gpt-4o-mini",
