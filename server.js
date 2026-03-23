@@ -3,7 +3,7 @@ import fetch from "node-fetch";
 import cors from "cors";
 
 const app = express();
-app.use(cors()); // permet à LimeSurvey d'appeler ton serveur
+app.use(cors());
 app.use(express.json());
 
 app.post("/analyseIA", async (req, res) => {
@@ -27,14 +27,12 @@ Texte :
 ${texte}
 `;
 
-        // Clé factice pour tester
-        const OPENAI_API_KEY = "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";
-
+        // <-- Récupère automatiquement la clé depuis Render
         const response = await fetch("https://api.openai.com/v1/chat/completions", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
-                "Authorization": `Bearer ${OPENAI_API_KEY}`
+                "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`
             },
             body: JSON.stringify({
                 model: "gpt-4o-mini",
@@ -47,7 +45,7 @@ ${texte}
 
         const reponseIA = data.choices[0].message.content;
 
-        res.json({ reponseIA }); // le front devra lire data.reponseIA
+        res.json({ reponseIA });
 
     } catch (error) {
         console.error(error);
