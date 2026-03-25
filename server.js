@@ -3,68 +3,84 @@ import cors from "cors";
 import OpenAI from "openai";
 
 const app = express();
-app.use(cors()); // Permet les requêtes cross-origin
+app.use(cors()); // Permet les requêtes depuis ton HTML / LimeSurvey
 app.use(express.json());
 
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// Route test simple
+// Route test rapide
 app.get("/", (req, res) => {
     res.send("Serveur opérationnel ✅");
 });
 
-// Route principale pour l'analyse IA et génération de relance
+// Route principale pour analyse IA et génération relance
 app.post("/analyseIA", async (req, res) => {
     const texte = req.body.texte || "";
 
     try {
-        // Prompt pour l'IA : analyser et générer la relance
+        if (!process.env.OPENAI_API_KEY) {
+            return res.json({
+                analyse: "",
+                relance: "Clé OpenAI manquante"
+            });
+        }
+
         const prompt = `
 Voici un retour consommateur :
 "${texte}"
 
-Pour chaque mot-clé suivant :
+Pour chaque mot-clé :
 Packaging, Apparence, Odeur/Arome, Goût, Morceaux, Texture, Arrière-goût, Qualité santé
 
-1. Indique pour chaque mot-clé :
-Mot-clé : Oui/Non - Détaillé/Pas détaillé
+1️⃣ Indique pour chaque mot-clé : Oui/Non - Détaillé/Pas détaillé
 
-2. Si certains items sont "Oui - Pas détaillé", génère directement une relance
-limitée à 2 items maximum, sous forme de question polie :
+2️⃣ Si certains sont "Oui - Pas détaillé", génère directement une relance
+limité à 2 items maximum, sous forme de question polie :
 "Qu'avez-vous particulièrement apprécié par rapport au [item1] et au [item2] ?"
-Ne répète pas les items déjà détaillés.
 
-3. Retourne strictement en JSON :
+3️⃣ Retourne strictement en JSON :
 {
   "analyse": "<résultat de l'analyse mot-clé>",
   "relance": "<question de relance ou 'Réponse suffisamment détaillée ✅'>"
 }
 `;
 
-        const completion = await client.chat.completions.create({
-            model: "gpt-3.5-turbo", // ou gpt-4o-mini si ton compte le permet
-            messages: [{ role: "user", content: prompt }],
-            temperature: 0
-        });
+        // Appel à GPT-3.5-turbo
+        let output = "";
+        try {
+            const completion = await client.chat.completions.create({
+                model: "gpt-3.5-turbo",
+                messages: [{ role: "user", content: prompt }],
+                temperature: 0
+            });
+            output = completion?.choices?.[0]?.message?.content || "";
+        } catch (err) {
+            console.error("Erreur OpenAI capturée :", err);
+            output = JSON.stringify({
+                analyse: "",
+                relance: `Erreur OpenAI : ${err.message}`
+            });
+        }
 
-        const output = completion?.choices?.[0]?.message?.content || "";
-
-        // Essayer de parser le JSON renvoyé par l'IA
+        // Parser le JSON renvoyé par l'IA
         let jsonOutput;
         try {
             jsonOutput = JSON.parse(output);
         } catch {
             jsonOutput = {
                 analyse: output,
-                relance: "Impossible de générer la relance automatiquement."
+                relance: "Impossible de générer une relance structurée."
             };
         }
 
         res.json(jsonOutput);
 
     } catch (err) {
-        console.error("Erreur OpenAI :", err);
-        res.status(500).json({ analyse: "", relance: `Erreur OpenAI : ${err.message}` });
+        console.error("Erreur serveur globale :", err);
+        res.json({
+            analyse: "",
+            relance: `Erreur serveur : ${err.message}`
+        });
     }
 });
 
