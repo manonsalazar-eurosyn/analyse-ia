@@ -1,10 +1,12 @@
 import express from "express";
-import fetch from "node-fetch";
 import cors from "cors";
+import OpenAI from "openai";
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 app.post("/analyseIA", async (req, res) => {
     try {
@@ -27,33 +29,27 @@ Texte :
 ${texte}
 `;
 
-        // <-- Récupère automatiquement la clé depuis Render
-        const response = await fetch("https://api.openai.com/v1/chat/completions", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`
-            },
-            body: JSON.stringify({
-                model: "gpt-4o-mini",
-                messages: [{ role: "user", content: prompt }],
-                temperature: 0
-            })
+        const response = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages: [{ role: "user", content: prompt }],
+            temperature: 0
         });
 
-        const data = await response.json();
+        // Vérification anti-crash
+        if (!response || !response.choices || !response.choices[0]) {
+            console.error("Réponse OpenAI bizarre :", response);
+            return res.status(500).json({ error: "Réponse invalide OpenAI" });
+        }
 
-        const reponseIA = data.choices[0].message.content;
-
-        res.json({ reponseIA });
+        res.json({
+            resultat: response.choices[0].message.content
+        });
 
     } catch (error) {
-        console.error(error);
+        console.error("Erreur serveur OpenAI :", error);
         res.status(500).json({ error: "Erreur serveur" });
     }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`Serveur lancé sur le port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`Serveur lancé sur le port ${PORT}`));
