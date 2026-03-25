@@ -3,84 +3,70 @@ import cors from "cors";
 import OpenAI from "openai";
 
 const app = express();
-app.use(cors());
+app.use(cors()); // Permet les requêtes cross-origin
 app.use(express.json());
 
-// Vérifier que la clé OpenAI est définie
-if (!process.env.OPENAI_API_KEY) {
-    console.warn("⚠️ Attention : OPENAI_API_KEY n'est pas définie !");
-} else {
-    console.log("✅ OPENAI_API_KEY détectée");
-}
-
-// Initialisation OpenAI
-const client = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY
-});
+const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // Route test simple
 app.get("/", (req, res) => {
     res.send("Serveur opérationnel ✅");
 });
 
-// Route principale pour l'analyse IA
+// Route principale pour l'analyse IA et génération de relance
 app.post("/analyseIA", async (req, res) => {
+    const texte = req.body.texte || "";
+
     try {
-        const texte = req.body.texte || "";
-
-        if (!process.env.OPENAI_API_KEY) {
-            return res.status(500).json({ reponseIA: "Clé OpenAI manquante" });
-        }
-
+        // Prompt pour l'IA : analyser et générer la relance
         const prompt = `
-Analyse ce texte.
+Voici un retour consommateur :
+"${texte}"
 
 Pour chaque mot-clé suivant :
 Packaging, Apparence, Odeur/Arome, Goût, Morceaux, Texture, Arrière-goût, Qualité santé
 
-Dis :
-- s'il est mentionné
-- s'il est détaillé ou juste cité
-
-Format de réponse :
+1. Indique pour chaque mot-clé :
 Mot-clé : Oui/Non - Détaillé/Pas détaillé
 
-Texte :
-${texte}
-        `;
+2. Si certains items sont "Oui - Pas détaillé", génère directement une relance
+limitée à 2 items maximum, sous forme de question polie :
+"Qu'avez-vous particulièrement apprécié par rapport au [item1] et au [item2] ?"
+Ne répète pas les items déjà détaillés.
 
-        let output = "";
+3. Retourne strictement en JSON :
+{
+  "analyse": "<résultat de l'analyse mot-clé>",
+  "relance": "<question de relance ou 'Réponse suffisamment détaillée ✅'>"
+}
+`;
 
+        const completion = await client.chat.completions.create({
+            model: "gpt-3.5-turbo", // ou gpt-4o-mini si ton compte le permet
+            messages: [{ role: "user", content: prompt }],
+            temperature: 0
+        });
+
+        const output = completion?.choices?.[0]?.message?.content || "";
+
+        // Essayer de parser le JSON renvoyé par l'IA
+        let jsonOutput;
         try {
-            const completion = await client.chat.completions.create({
-                model: "gpt-4o-mini",
-                messages: [{ role: "user", content: prompt }],
-                temperature: 0
-            });
-
-            // ⚡ Sécurité : vérifier que choices[0] existe
-            if (completion?.choices?.[0]?.message?.content) {
-                output = completion.choices[0].message.content;
-            } else {
-                output = "Erreur : pas de réponse IA disponible";
-            }
-
-        } catch (err) {
-            console.error("Erreur OpenAI :", err);
-            output = `Erreur OpenAI : ${err.message}`;
+            jsonOutput = JSON.parse(output);
+        } catch {
+            jsonOutput = {
+                analyse: output,
+                relance: "Impossible de générer la relance automatiquement."
+            };
         }
 
-        res.json({ reponseIA: output });
+        res.json(jsonOutput);
 
-    } catch (error) {
-        console.error("Erreur serveur globale :", error);
-        res.status(500).json({ reponseIA: "Erreur serveur" });
+    } catch (err) {
+        console.error("Erreur OpenAI :", err);
+        res.status(500).json({ analyse: "", relance: `Erreur OpenAI : ${err.message}` });
     }
 });
 
-// Lancer serveur
 const PORT = process.env.PORT || 3000;
-console.log("Début du serveur…");
-app.listen(PORT, () => {
-    console.log(`Serveur prêt sur le port ${PORT} ✅`);
-});
+app.listen(PORT, () => console.log(`Serveur prêt sur le port ${PORT} ✅`));
