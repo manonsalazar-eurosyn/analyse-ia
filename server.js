@@ -6,29 +6,31 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Vérifier la clé OpenAI
+// Vérifier que la clé OpenAI est définie
 if (!process.env.OPENAI_API_KEY) {
-    console.warn("⚠️ OPENAI_API_KEY n'est pas définie. La route /analyseIA renverra un message d'erreur.");
+    console.warn("⚠️ Attention : OPENAI_API_KEY n'est pas définie !");
+} else {
+    console.log("✅ OPENAI_API_KEY détectée");
 }
 
-// Initialisation OpenAI avec variable Render
+// Initialisation OpenAI
 const client = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY
 });
 
-// Route test pour vérifier que le serveur répond
+// Route test simple
 app.get("/", (req, res) => {
     res.send("Serveur opérationnel ✅");
 });
 
-// Route principale
+// Route principale pour l'analyse IA
 app.post("/analyseIA", async (req, res) => {
     try {
-        if (!process.env.OPENAI_API_KEY) {
-            return res.status(500).json({ error: "Clé OpenAI manquante" });
-        }
-
         const texte = req.body.texte || "";
+
+        if (!process.env.OPENAI_API_KEY) {
+            return res.status(500).json({ reponseIA: "Clé OpenAI manquante" });
+        }
 
         const prompt = `
 Analyse ce texte.
@@ -47,29 +49,38 @@ Texte :
 ${texte}
         `;
 
-        // Appel API OpenAI via nouveau SDK
-        const completion = await client.chat.completions.create({
-            model: "gpt-4o-mini",
-            messages: [
-                { role: "user", content: prompt }
-            ],
-            temperature: 0
-        });
+        let output = "";
 
-        const output = completion.choices?.[0]?.message?.content || "Erreur : pas de réponse IA";
+        try {
+            const completion = await client.chat.completions.create({
+                model: "gpt-4o-mini",
+                messages: [{ role: "user", content: prompt }],
+                temperature: 0
+            });
 
-        console.log("✅ Analyse réalisée");  // log pour Render
+            // ⚡ Sécurité : vérifier que choices[0] existe
+            if (completion?.choices?.[0]?.message?.content) {
+                output = completion.choices[0].message.content;
+            } else {
+                output = "Erreur : pas de réponse IA disponible";
+            }
+
+        } catch (err) {
+            console.error("Erreur OpenAI :", err);
+            output = `Erreur OpenAI : ${err.message}`;
+        }
+
         res.json({ reponseIA: output });
 
     } catch (error) {
-        console.error("Erreur API OpenAI :", error);
-        res.status(500).json({ error: "Erreur serveur" });
+        console.error("Erreur serveur globale :", error);
+        res.status(500).json({ reponseIA: "Erreur serveur" });
     }
 });
 
-// Lancer serveur avec logs clairs
+// Lancer serveur
 const PORT = process.env.PORT || 3000;
-console.log("Début du serveur…");  // log avant app.listen
+console.log("Début du serveur…");
 app.listen(PORT, () => {
     console.log(`Serveur prêt sur le port ${PORT} ✅`);
 });
