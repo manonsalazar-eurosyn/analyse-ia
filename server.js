@@ -1,88 +1,112 @@
 import express from "express";
 import cors from "cors";
-import OpenAI from "openai";
+import { GoogleGenAI } from "@google/genai";
 
 const app = express();
-app.use(cors()); // Permet les requêtes depuis ton HTML / LimeSurvey
+app.use(cors());
 app.use(express.json());
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-// Route test rapide
-app.get("/", (req, res) => {
-    res.send("Serveur opérationnel ✅");
+const ai = new GoogleGenAI({
+  apiKey: process.env.GEMINI_API_KEY
 });
 
-// Route principale pour analyse IA et génération relance
+app.get("/", (req, res) => {
+  res.send("Serveur Gemini opérationnel ✅");
+});
+
 app.post("/analyseIA", async (req, res) => {
-    const texte = req.body.texte || "";
+  const texte = (req.body.texte || "").trim();
 
-    try {
-        if (!process.env.OPENAI_API_KEY) {
-            return res.json({
-                analyse: "",
-                relance: "Clé OpenAI manquante"
-            });
-        }
+  try {
+    if (!process.env.GEMINI_API_KEY) {
+      return res.json({
+        analyse: "",
+        relance: "Clé Gemini manquante"
+      });
+    }
 
-        const prompt = `
+    if (!texte) {
+      return res.json({
+        analyse: "",
+        relance: "Aucun texte reçu."
+      });
+    }
+
+    const prompt = `
 Voici un retour consommateur :
 "${texte}"
 
-Pour chaque mot-clé :
-Packaging, Apparence, Odeur/Arome, Goût, Morceaux, Texture, Arrière-goût, Qualité santé
+Thèmes à analyser :
+- Packaging
+- Apparence
+- Odeur/Arome
+- Goût
+- Morceaux
+- Texture
+- Arrière-goût
+- Qualité santé
 
-1️⃣ Indique pour chaque mot-clé : Oui/Non - Détaillé/Pas détaillé
+Consignes :
+1. Pour chaque thème, indique l'un des 3 statuts exacts :
+   - "Oui - Détaillé"
+   - "Oui - Pas détaillé"
+   - "Non"
 
-2️⃣ Si certains sont "Oui - Pas détaillé", génère directement une relance
-limité à 2 items maximum, sous forme de question polie :
-"Qu'avez-vous particulièrement apprécié par rapport au [item1] et au [item2] ?"
+2. Si un ou plusieurs thèmes sont "Oui - Pas détaillé",
+   génère UNE relance polie sur 2 items maximum.
 
-3️⃣ Retourne strictement en JSON :
+3. Si aucun thème n'est "Oui - Pas détaillé",
+   mets exactement :
+   "Réponse suffisamment détaillée ✅"
+
+4. Retourne STRICTEMENT un JSON valide, sans markdown, sans commentaire, sans texte autour,
+   avec cette structure exacte :
+
 {
-  "analyse": "<résultat de l'analyse mot-clé>",
-  "relance": "<question de relance ou 'Réponse suffisamment détaillée ✅'>"
+  "analyse": {
+    "Packaging": "",
+    "Apparence": "",
+    "Odeur/Arome": "",
+    "Goût": "",
+    "Morceaux": "",
+    "Texture": "",
+    "Arrière-goût": "",
+    "Qualité santé": ""
+  },
+  "relance": ""
 }
 `;
 
-        // Appel à GPT-3.5-turbo
-        let output = "";
-        try {
-            const completion = await client.chat.completions.create({
-                model: "gpt-3.5-turbo",
-                messages: [{ role: "user", content: prompt }],
-                temperature: 0
-            });
-            output = completion?.choices?.[0]?.message?.content || "";
-        } catch (err) {
-            console.error("Erreur OpenAI capturée :", err);
-            output = JSON.stringify({
-                analyse: "",
-                relance: `Erreur OpenAI : ${err.message}`
-            });
-        }
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt
+    });
 
-        // Parser le JSON renvoyé par l'IA
-        let jsonOutput;
-        try {
-            jsonOutput = JSON.parse(output);
-        } catch {
-            jsonOutput = {
-                analyse: output,
-                relance: "Impossible de générer une relance structurée."
-            };
-        }
+    const output = (response.text || "").trim();
 
-        res.json(jsonOutput);
-
-    } catch (err) {
-        console.error("Erreur serveur globale :", err);
-        res.json({
-            analyse: "",
-            relance: `Erreur serveur : ${err.message}`
-        });
+    let jsonOutput;
+    try {
+      jsonOutput = JSON.parse(output);
+    } catch (e) {
+      jsonOutput = {
+        analyse: output,
+        relance: "Impossible de parser le JSON retourné par Gemini."
+      };
     }
+
+    res.json(jsonOutput);
+
+  } catch (err) {
+    console.error("Erreur Gemini :", err);
+
+    res.json({
+      analyse: "",
+      relance: `Erreur Gemini : ${err.message || "Erreur inconnue"}`
+    });
+  }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Serveur prêt sur le port ${PORT} ✅`));
+app.listen(PORT, () => {
+  console.log(`Serveur prêt sur le port ${PORT} ✅`);
+});
