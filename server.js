@@ -1,6 +1,6 @@
 import express from "express";
 import cors from "cors";
-import Mistral from "@mistralai/mistralai";
+import { Mistral } from "@mistralai/mistralai";
 
 const app = express();
 app.use(cors());
@@ -82,7 +82,7 @@ Consignes :
       messages: [
         {
           role: "system",
-          content: "Tu es un assistant qui retourne uniquement du JSON valide."
+          content: "Tu retournes uniquement du JSON valide."
         },
         {
           role: "user",
@@ -92,7 +92,13 @@ Consignes :
       temperature: 0.2
     });
 
-    const output = (response.choices?.[0]?.message?.content || "").trim();
+    let output = response.choices?.[0]?.message?.content || "";
+
+    if (Array.isArray(output)) {
+      output = output.map(x => x.text || "").join("").trim();
+    } else {
+      output = String(output).trim();
+    }
 
     let jsonOutput;
     try {
