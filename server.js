@@ -1,27 +1,27 @@
 import express from "express";
 import cors from "cors";
-import { GoogleGenAI } from "@google/genai";
+import Mistral from "@mistralai/mistralai";
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY
+const client = new Mistral({
+  apiKey: process.env.MISTRAL_API_KEY
 });
 
 app.get("/", (req, res) => {
-  res.send("Serveur Gemini opérationnel ✅");
+  res.send("Serveur Mistral opérationnel ✅");
 });
 
 app.post("/analyseIA", async (req, res) => {
   const texte = (req.body.texte || "").trim();
 
   try {
-    if (!process.env.GEMINI_API_KEY) {
+    if (!process.env.MISTRAL_API_KEY) {
       return res.json({
         analyse: "",
-        relance: "Clé Gemini manquante"
+        relance: "Clé Mistral manquante"
       });
     }
 
@@ -77,12 +77,22 @@ Consignes :
 }
 `;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: prompt
+    const response = await client.chat.complete({
+      model: "mistral-small-latest",
+      messages: [
+        {
+          role: "system",
+          content: "Tu es un assistant qui retourne uniquement du JSON valide."
+        },
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
+      temperature: 0.2
     });
 
-    const output = (response.text || "").trim();
+    const output = (response.choices?.[0]?.message?.content || "").trim();
 
     let jsonOutput;
     try {
@@ -90,18 +100,18 @@ Consignes :
     } catch (e) {
       jsonOutput = {
         analyse: output,
-        relance: "Impossible de parser le JSON retourné par Gemini."
+        relance: "Impossible de parser le JSON retourné par Mistral."
       };
     }
 
     res.json(jsonOutput);
 
   } catch (err) {
-    console.error("Erreur Gemini :", err);
+    console.error("Erreur Mistral :", err);
 
     res.json({
       analyse: "",
-      relance: `Erreur Gemini : ${err.message || "Erreur inconnue"}`
+      relance: `Erreur Mistral : ${err.message || "Erreur inconnue"}`
     });
   }
 });
