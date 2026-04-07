@@ -14,6 +14,20 @@ app.get("/", (req, res) => {
   res.send("Serveur Mistral opérationnel ✅");
 });
 
+function extractJson(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    const match = text.match(/\{[\s\S]*\}/);
+    if (!match) return null;
+    try {
+      return JSON.parse(match[0]);
+    } catch {
+      return null;
+    }
+  }
+}
+
 app.post("/analyseIA", async (req, res) => {
   const texte = (req.body.texte || "").trim();
 
@@ -33,7 +47,20 @@ app.post("/analyseIA", async (req, res) => {
     }
 
     const prompt = `
-Voici un retour consommateur :
+Tu es un interviewer senior expert en tests consommateurs, spécialisé dans les produits alimentaires pour chats et chiens.
+
+Ta mission :
+1. lire la réponse ouverte d’un consommateur
+2. repérer si certains thèmes sont mentionnés
+3. décider pour chaque thème s’il est :
+   - "Oui - Détaillé"
+   - "Oui - Pas détaillé"
+   - "Non"
+4. si un ou plusieurs thèmes sont "Oui - Pas détaillé", générer UNE seule relance courte, concrète, neutre, sur 1 thème principal ou 2 thèmes maximum
+5. si tout est déjà suffisamment précis, écrire exactement :
+   "Réponse suffisamment détaillée ✅"
+
+Réponse consommateur :
 "${texte}"
 
 Thèmes à analyser :
@@ -46,21 +73,78 @@ Thèmes à analyser :
 - Arrière-goût
 - Qualité santé
 
-Consignes :
-1. Pour chaque thème, indique l'un des 3 statuts exacts :
-   - "Oui - Détaillé"
-   - "Oui - Pas détaillé"
-   - "Non"
+Définition des statuts :
 
-2. Si un ou plusieurs thèmes sont "Oui - Pas détaillé",
-   génère UNE relance polie sur 2 items maximum.
+1) "Oui - Détaillé"
+Utiliser ce statut si le thème est mentionné avec au moins un élément concret, observable ou actionnable.
+Exemples :
+- "odeur trop forte"
+- "texture trop sèche"
+- "morceaux trop gros"
+- "pack difficile à ouvrir"
+- "arrière-goût désagréable"
+- "ça sent artificiel"
+- "le produit colle à la cuillère"
+- "mon chat a mangé tout de suite"
+- "il a léché la gamelle"
+- "selles plus normales"
 
-3. Si aucun thème n'est "Oui - Pas détaillé",
-   mets exactement :
-   "Réponse suffisamment détaillée ✅"
+2) "Oui - Pas détaillé"
+Utiliser ce statut si le thème est mentionné mais reste vague, général ou peu exploitable.
+Exemples :
+- "bonne odeur"
+- "bonne texture"
+- "apparence bien"
+- "goût correct"
+- "packaging bien"
+- "bonne qualité"
+- "ça semble sain"
 
-4. Retourne STRICTEMENT un JSON valide, sans markdown, sans commentaire, sans texte autour,
-   avec cette structure exacte :
+3) "Non"
+Utiliser ce statut si le thème n’est pas mentionné.
+
+Règles importantes :
+- Une réponse est suffisante si elle contient un thème clair + un détail concret, observable ou actionnable.
+- Une réponse courte peut être suffisante si elle est déjà très claire.
+- Une réponse plus longue peut rester insuffisante si elle reste vague.
+- Ne pas inventer d’information absente.
+- Ne pas surinterpréter.
+
+Règles de relance :
+- Générer UNE seule relance
+- Une seule phrase
+- Courte
+- Concrète
+- Neutre
+- Sans remerciement
+- Sans résumé
+- Sans jargon
+- Sans "pouvez-vous m’en dire plus"
+- Maximum 18 mots idéalement
+- Relancer sur 1 thème principal si possible
+- Relancer sur 2 thèmes maximum seulement si les 2 sont clairement mentionnés et restent vagues
+
+Priorité des thèmes à creuser :
+1. Packaging
+2. Apparence
+3. Odeur/Arome
+4. Goût
+5. Morceaux
+6. Texture
+7. Arrière-goût
+8. Qualité santé
+
+Exemples de bonnes relances :
+- "Qu’est-ce qui vous plaît précisément dans l’odeur ?"
+- "Qu’est-ce qui vous gêne dans la texture ?"
+- "Qu’est-ce qui vous plaît dans l’apparence ?"
+- "Qu’est-ce qui vous gêne dans les morceaux ?"
+- "Qu’est-ce qui vous fait percevoir une bonne qualité santé ?"
+
+Si tous les thèmes mentionnés sont déjà détaillés, mets exactement :
+"Réponse suffisamment détaillée ✅"
+
+Retourne STRICTEMENT un JSON valide, sans markdown, sans commentaire, sans texte autour, avec cette structure exacte :
 
 {
   "analyse": {
@@ -82,14 +166,15 @@ Consignes :
       messages: [
         {
           role: "system",
-          content: "Tu retournes uniquement du JSON valide."
+          content:
+            "Tu es un moteur d’analyse. Tu réponds uniquement avec un JSON strictement valide. Aucun markdown. Aucun texte hors JSON."
         },
         {
           role: "user",
           content: prompt
         }
       ],
-      temperature: 0.2
+      temperature: 0.1
     });
 
     let output = response.choices?.[0]?.message?.content || "";
@@ -100,22 +185,21 @@ Consignes :
       output = String(output).trim();
     }
 
-    let jsonOutput;
-    try {
-      jsonOutput = JSON.parse(output);
-    } catch (e) {
-      jsonOutput = {
-        analyse: output,
+    const jsonOutput = extractJson(output);
+
+    if (!jsonOutput) {
+      return res.json({
+        analyse: "",
         relance: "Impossible de parser le JSON retourné par Mistral."
-      };
+      });
     }
 
-    res.json(jsonOutput);
+    return res.json(jsonOutput);
 
   } catch (err) {
     console.error("Erreur Mistral :", err);
 
-    res.json({
+    return res.json({
       analyse: "",
       relance: `Erreur Mistral : ${err.message || "Erreur inconnue"}`
     });
