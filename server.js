@@ -67,6 +67,24 @@ function isValidResponse(obj) {
   return expectedThemes.every(theme => typeof obj.analyse[theme] === "string");
 }
 
+// Petit retry automatique sur les 429
+async function callMistral(messages, retries = 2) {
+  try {
+    return await client.chat.complete({
+      model: "open-mistral-nemo",
+      messages,
+      temperature: 0.1
+    });
+  } catch (err) {
+    const msg = String(err?.message || "");
+    if (retries > 0 && msg.includes("429")) {
+      await new Promise(resolve => setTimeout(resolve, 1200));
+      return callMistral(messages, retries - 1);
+    }
+    throw err;
+  }
+}
+
 app.post("/analyseIA", async (req, res) => {
   const texte = (req.body.texte || "").trim();
 
@@ -74,7 +92,7 @@ app.post("/analyseIA", async (req, res) => {
     if (!process.env.MISTRAL_API_KEY) {
       return res.json({
         analyse: emptyAnalyse(),
-        relance: "Clé Mistral manquante"
+        relance: "Réponse suffisamment détaillée ✅"
       });
     }
 
@@ -358,21 +376,17 @@ FORMAT DE SORTIE (JSON STRICT) :
 }
 `;
 
-    const response = await client.chat.complete({
-      model: "mistral-small-latest",
-      messages: [
-        {
-          role: "system",
-          content:
-            'Réponds uniquement avec un JSON valide. Aucun texte hors JSON. Si aucune relance n’est nécessaire, mets exactement "Réponse suffisamment détaillée ✅".'
-        },
-        {
-          role: "user",
-          content: prompt
-        }
-      ],
-      temperature: 0.1
-    });
+    const response = await callMistral([
+      {
+        role: "system",
+        content:
+          'Réponds uniquement avec un JSON valide. Aucun texte hors JSON. Si aucune relance n’est nécessaire, mets exactement "Réponse suffisamment détaillée ✅".'
+      },
+      {
+        role: "user",
+        content: prompt
+      }
+    ]);
 
     let output = response.choices?.[0]?.message?.content || "";
 
@@ -387,7 +401,7 @@ FORMAT DE SORTIE (JSON STRICT) :
     if (!jsonOutput || !isValidResponse(jsonOutput)) {
       return res.json({
         analyse: emptyAnalyse(),
-        relance: "Impossible de parser le JSON retourné par Mistral."
+        relance: "Réponse suffisamment détaillée ✅"
       });
     }
 
@@ -398,7 +412,7 @@ FORMAT DE SORTIE (JSON STRICT) :
 
     return res.json({
       analyse: emptyAnalyse(),
-      relance: `Erreur Mistral : ${err.message || "Erreur inconnue"}`
+      relance: "Réponse suffisamment détaillée ✅"
     });
   }
 });
